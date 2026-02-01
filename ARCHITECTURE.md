@@ -1,77 +1,88 @@
-# Architecture Documentation - Real-Time Collaborative Drawing Canvas
+# How Our Drawing App Works - Architecture Guide
 
-## 📋 Table of Contents
-1. [System Overview](#system-overview)
-2. [Data Flow Diagram](#data-flow-diagram)
-3. [WebSocket Protocol](#websocket-protocol)
-4. [Undo/Redo Strategy](#undoredo-strategy)
-5. [Conflict Resolution](#conflict-resolution)
-6. [Performance Decisions](#performance-decisions)
-7. [Project Structure](#project-structure)
-8. [Production Deployment](#production-deployment)
+## Quick Navigation
+1. [The Big Picture](#the-big-picture)
+2. [How Strokes Flow](#how-strokes-flow)
+3. [Real-Time Communication](#real-time-communication)
+4. [Undo/Redo Logic](#undoredo-logic)
+5. [Keeping Everyone in Sync](#keeping-everyone-in-sync)
+6. [Making It Fast](#making-it-fast)
+7. [Project Layout](#project-layout)
+8. [Scaling Up](#scaling-up)
 
 ---
 
-## System Overview
+## The Big Picture
 
-The Real-Time Collaborative Drawing Canvas is a client-server architecture that enables multiple users to draw simultaneously on a shared canvas with real-time synchronization.
+Imagine a shared whiteboard where multiple people can draw at the same time, and everyone sees the same thing. That's what we're building! Here's how it works:
 
-### Core Components
+**Your Computer** → draws something → **Server** → tells everyone else → **Their Computers** → show your drawing
+
+The app uses a **client-server architecture**, which means your computer (the client) talks to a central server that keeps everything organized.
+
+### Main Parts
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        Frontend (React)                          │
+│                        Your Browser                              │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
+│  When you move your mouse or touch:                             │
 │  ┌─────────────────────┐      ┌─────────────────────────────┐  │
-│  │ useCollaborative    │      │  DrawingCanvas Component    │  │
-│  │ Canvas Hook         │─────▶│  - Render strokes           │  │
-│  │ - State management  │      │  - Handle mouse/touch input │  │
-│  │ - Network layer     │      │  - FPS tracking             │  │
+│  │ App State Manager   │      │  Drawing Canvas             │  │
+│  │ (tracks everything) │─────▶│  (shows the drawing)        │  │
+│  │ - Your strokes      │      │  - Shows your marks         │  │
+│  │ - Other people      │      │  - Shows other people's     │  │
+│  │ - The canvas        │      │  - Updates in real-time     │  │
 │  └──────────┬──────────┘      └─────────────────────────────┘  │
 │             │                                                    │
+│        When you draw, it sends info to server                   │
+│        When server responds, it updates the canvas              │
 │      ┌──────┴──────┐                                             │
 │      │             │                                             │
 │      ▼             ▼                                             │
 │  ┌────────┐  ┌─────────┐                                        │
-│  │POST/ws│  │ SSE     │                                         │
-│  │(send) │  │ (recv)  │                                         │
+│  │Send    │  │Receive  │                                        │
+│  │updates │  │updates  │                                        │
+│  │(POST)  │  │(stream) │                                        │
 │  └───┬────┘  └────┬────┘                                        │
 │      │            │                                              │
 └──────┼────────────┼──────────────────────────────────────────────┘
        │            │
+       │    Talking to server    │
        │            │
        ▼            ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                      Backend (Node.js)                           │
+│                      The Server (Node.js)                        │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
+│  The server's job: Keep everyone's drawing in sync             │
+│                                                                  │
 │  ┌────────────────────────────────────────────────────────┐    │
-│  │  POST /api/ws Endpoint                                 │    │
-│  │  - Receives drawing events from clients                │    │
-│  │  - Validates input data                                │    │
-│  │  - Updates room state                                  │    │
-│  │  - Broadcasts changes to all connected clients         │    │
+│  │  When someone draws:                                   │    │
+│  │  1. Server gets the drawing info                       │    │
+│  │  2. Server checks it's valid                           │    │
+│  │  3. Server updates the drawing                         │    │
+│  │  4. Server tells EVERYONE (including the person who   │    │
+│  │     drew it) about the update                          │    │
 │  └────────────────────────────────────────────────────────┘    │
 │                           ▼                                     │
 │  ┌────────────────────────────────────────────────────────┐    │
-│  │  Room State (In-Memory)                                │    │
+│  │  The Server's Memory (Room State)                      │    │
 │  │                                                         │    │
-│  │  strokes: Stroke[]                                     │    │
-│  │  activeStrokes: Map<strokeId, Stroke>                 │    │
-│  │  users: Map<userId, User>                             │    │
-│  │  cursors: Map<userId, UserCursor>                     │    │
-│  │  operations: Operation[]  (undo/redo history)         │    │
-│  │  redoStack: Operation[]   (undone operations)         │    │
-│  │  clients: Map<userId, SSE Controller>                 │    │
+│  │  - All strokes (completed drawings)                    │    │
+│  │  - Strokes being drawn right now                       │    │
+│  │  - Who's connected                                     │    │
+│  │  - Where everyone's cursor is                          │    │
+│  │  - All past actions (for undo/redo)                    │    │
+│  │  - All undone actions (for redo)                       │    │
 │  └────────────────────────────────────────────────────────┘    │
 │                           ▼                                     │
 │  ┌────────────────────────────────────────────────────────┐    │
-│  │  GET /api/ws Endpoint (SSE Stream)                     │    │
-│  │  - Establishes Server-Sent Events connection          │    │
-│  │  - Sends initial state to new client                  │    │
-│  │  - Broadcasts updates to all clients                  │    │
-│  │  - Maintains persistent connection                    │    │
+│  │  Broadcasting Updates                                  │    │
+│  │  - Server sends messages to all connected browsers     │    │
+│  │  - Uses a real-time stream (Server-Sent Events)        │    │
+│  │  - Like a TV broadcast: server talks, all listen      │    │
 │  └────────────────────────────────────────────────────────┘    │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
@@ -79,266 +90,115 @@ The Real-Time Collaborative Drawing Canvas is a client-server architecture that 
 
 ---
 
-## Data Flow Diagram
+## How Strokes Flow
 
-### Complete Drawing Event Lifecycle
+Think of a "stroke" as one continuous line you draw. Here's exactly what happens when you draw something:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    USER DRAWS ON CANVAS                         │
-└─────────────────────────────────────────────────────────────────┘
-                           │
-                           ▼
-        ┌──────────────────────────────────────┐
-        │  1. DETECT INPUT (Mouse/Touch)       │
-        │     - Get mouse position             │
-        │     - Determine if drawing           │
-        └──────────────────────────────────────┘
-                           │
-                           ▼
-        ┌──────────────────────────────────────┐
-        │  2. START STROKE (Client)            │
-        │     - Generate unique stroke ID      │
-        │     - Create Stroke object           │
-        │     - Save to currentStrokeRef       │
-        │     - Optimistic update: add to      │
-        │       activeStrokes Map              │
-        └──────────────────────────────────────┘
-                           │
-                           ▼
-        ┌──────────────────────────────────────┐
-        │  3. SEND TO SERVER (POST /api/ws)    │
-        │     {                                │
-        │       type: "stroke_start"           │
-        │       roomId: "abc123"               │
-        │       userId: "user1"                │
-        │       payload: { strokeId, point,   │
-        │                  color, width, tool} │
-        │     }                                │
-        └──────────────────────────────────────┘
-                           │
-                           ▼
-        ┌──────────────────────────────────────┐
-        │  4. SERVER PROCESSES                 │
-        │     - Validate stroke data           │
-        │     - Add to activeStrokes           │
-        │     - Create Room State if needed    │
-        └──────────────────────────────────────┘
-                           │
-                           ▼
-        ┌──────────────────────────────────────┐
-        │  5. SERVER BROADCASTS via SSE        │
-        │     - Send to ALL clients (except    │
-        │       sender if excludeUserId)       │
-        │     - Message: {                     │
-        │       type: "stroke_start"           │
-        │       payload: Stroke object         │
-        │     }                                │
-        └──────────────────────────────────────┘
-                           │
-                ┌──────────┴──────────┐
-                │                     │
-                ▼                     ▼
-    ┌──────────────────────┐  ┌──────────────────────┐
-    │  SENDER CLIENT       │  │  OTHER CLIENTS       │
-    │                      │  │                      │
-    │  Already has stroke  │  │  Receive stroke_start│
-    │  in activeStrokes    │  │  Add to activeStrokes│
-    │  (optimistic)        │  │  Render immediately  │
-    │                      │  │                      │
-    │  Render locally ✓    │  │  Render on canvas ✓  │
-    └──────────────────────┘  └──────────────────────┘
-                │                     │
-                └─────────────┬───────┘
-                              │
-                              ▼
-        ┌──────────────────────────────────────┐
-        │  6. UPDATE STROKE (Repeat while      │
-        │     user is drawing)                 │
-        │     - Batch points (5pts or 16ms)    │
-        │     - Send stroke_update with points │
-        │     - Server updates activeStrokes   │
-        │     - Server broadcasts to clients   │
-        └──────────────────────────────────────┘
-                           │
-                           ▼
-        ┌──────────────────────────────────────┐
-        │  7. END STROKE                       │
-        │     - Flush remaining points         │
-        │     - Create complete Stroke object  │
-        │     - Send stroke_end               │
-        └──────────────────────────────────────┘
-                           │
-                           ▼
-        ┌──────────────────────────────────────┐
-        │  8. SERVER FINALIZES                 │
-        │     - Remove from activeStrokes      │
-        │     - Add to strokes[]               │
-        │     - Create Operation record        │
-        │     - Add to operations[] (for undo) │
-        │     - Clear redoStack[]              │
-        └──────────────────────────────────────┘
-                           │
-                           ▼
-        ┌──────────────────────────────────────┐
-        │  9. BROADCAST COMPLETION             │
-        │     - Send stroke_end to all clients │
-        │     - Include operation info         │
-        │     - Update undo/redo state         │
-        └──────────────────────────────────────┘
-                           │
-                           ▼
-        ┌──────────────────────────────────────┐
-        │  10. CLIENT FINALIZES                │
-        │      - Remove from activeStrokes     │
-        │      - Add to strokes[]              │
-        │      - Update canUndo/canRedo flags  │
-        │      - Canvas now shows completed    │
-        │        stroke                        │
-        └──────────────────────────────────────┘
-
-        ✅ STROKE COMPLETE AND SYNCHRONIZED
+📍 YOU START DRAWING
+   ↓
+⏱️  Your browser detects your mouse/finger moving
+   ↓
+🎨 Browser creates a "stroke" (like a digital paint mark)
+   ↓
+📤 Browser sends: "Hey server, I'm starting to draw! Here's the stroke ID, 
+                   where I started, the color I'm using, and the brush size"
+   ↓
+✅ Your browser shows it RIGHT AWAY (no waiting)
+   ↓
+📨 Server gets the message and stores it
+   ↓
+📡 Server broadcasts: "Hey everyone! User Bob is drawing. Here's what it looks like"
+   ↓
+👥 ALL OTHER BROWSERS get the update
+   ↓
+🖼️  Everyone's canvas updates with your drawing
+   ↓
+⏳ While you keep drawing, browser keeps sending points in batches
+   (not point-by-point, but groups of 5 at a time)
+   ↓
+📤 Browser sends: "Here are the next 5 points Bob drew..."
+   ↓
+📡 Server tells everyone
+   ↓
+👥 Everyone's canvas updates
+   ↓
+✋ You stop drawing (release mouse/lift finger)
+   ↓
+🎁 Browser sends: "Here's the complete stroke with all its points"
+   ↓
+💾 Server saves the complete stroke
+   ↓
+📡 Server tells everyone: "Bob finished drawing this stroke"
+   ↓
+🎉 Everyone's drawing is now in sync!
 ```
 
 ---
 
-## WebSocket Protocol
+## Real-Time Communication
 
-> **Note**: This implementation uses Server-Sent Events (SSE) + HTTP POST instead of true WebSocket for better Next.js compatibility.
+The app doesn't use traditional WebSockets. Instead, it uses two simpler approaches that work great with Next.js:
 
-### Message Types
+**POST requests** to send your drawing to the server
+**Server-Sent Events (SSE)** to receive updates from the server (like a constant stream of messages)
 
-#### 1. **stroke_start** - Begin drawing
-```typescript
-{
-  type: 'stroke_start',
-  roomId: 'room-abc123',
-  userId: 'user-1',
-  payload: {
-    strokeId: 'stroke-xyz789',
-    point: { x: 100, y: 200 },
-    color: '#FF0000',
-    width: 4,
-    tool: 'brush'
-  },
-  timestamp: 1643645932000
-}
+Think of it like this:
+- **POST** = You talking to the server
+- **SSE** = The server talking to everyone
+
+### Different Types of Messages
+
+#### 1️⃣ "I'm starting to draw"
+```
+Your browser → Server:
+"Hey! I'm about to draw a stroke. 
+ Here's the stroke ID, where I started, 
+ the color (#FF0000 = red), and brush size (4)"
 ```
 
-#### 2. **stroke_update** - Add points while drawing
-```typescript
-{
-  type: 'stroke_update',
-  roomId: 'room-abc123',
-  userId: 'user-1',
-  payload: {
-    strokeId: 'stroke-xyz789',
-    points: [
-      { x: 102, y: 202 },
-      { x: 105, y: 205 },
-      { x: 108, y: 208 }
-    ],
-    endPoint: { x: 108, y: 208 }
-  },
-  timestamp: 1643645932016
-}
+#### 2️⃣ "Here are more points I drew"
+```
+Your browser → Server:
+"Here are 5 more points for that stroke I started"
+
+This happens while you're drawing, multiple times per second
 ```
 
-#### 3. **stroke_end** - Finish stroke
-```typescript
-{
-  type: 'stroke_end',
-  roomId: 'room-abc123',
-  userId: 'user-1',
-  payload: {
-    strokeId: 'stroke-xyz789',
-    stroke: { id, userId, points, color, width, tool, timestamp, startPoint, endPoint },
-    operation: { id, type, stroke, userId, userName, timestamp },
-    canUndo: true,
-    canRedo: false
-  },
-  timestamp: 1643645932050
-}
+#### 3️⃣ "I'm done drawing"
+```
+Your browser → Server:
+"Finished! Here's the complete stroke with all points"
+
+Server now saves this permanently
 ```
 
-#### 4. **cursor_move** - Update cursor position
-```typescript
-{
-  type: 'cursor_move',
-  roomId: 'room-abc123',
-  userId: 'user-1',
-  payload: {
-    userId: 'user-1',
-    x: 250,
-    y: 150,
-    color: '#FF5733',
-    name: 'Alice',
-    isDrawing: true,
-    lastUpdate: 1643645932067
-  },
-  timestamp: 1643645932067
-}
+#### 4️⃣ "I moved my cursor"
+```
+Your browser → Server:
+"My cursor is at position (250, 150)"
+
+This shows other people where you're pointing
 ```
 
-#### 5. **undo** - Undo last operation
-```typescript
-{
-  type: 'undo',
-  roomId: 'room-abc123',
-  userId: 'user-1',
-  payload: {
-    operation: {...},
-    undoneBy: 'Alice',
-    strokes: [...],
-    canUndo: false,
-    canRedo: true
-  },
-  timestamp: 1643645932100
-}
+#### 5️⃣ "Undo" / "Redo"
+```
+Your browser → Server:
+"I clicked Undo - please remove the last stroke"
+
+Server removes it, tells everyone else to remove it too
 ```
 
-#### 6. **redo** - Redo last undone operation
-```typescript
-{
-  type: 'redo',
-  roomId: 'room-abc123',
-  userId: 'user-1',
-  payload: {
-    operation: {...},
-    redoneBy: 'Alice',
-    strokes: [...],
-    canUndo: true,
-    canRedo: false
-  },
-  timestamp: 1643645932115
-}
+#### 6️⃣ "Here's the full state"
 ```
-
-#### 7. **sync_state** - Full state sync (sent on connection)
-```typescript
-{
-  type: 'sync_state',
-  roomId: 'room-abc123',
-  userId: 'user-1',
-  payload: {
-    strokes: [...],
-    users: [
-      { id, name, color, joinedAt, isOnline },
-      ...
-    ],
-    cursors: [...],
-    yourUser: {...},
-    operations: [...],
-    canUndo: false,
-    canRedo: false
-  },
-  timestamp: 1643645932000
-}
+Server → Your browser (when you first join):
+"Welcome! Here are all the strokes that already exist,
+ who's connected, and the history of undo/redo"
 ```
 
 ---
 
-## Undo/Redo Strategy
+## Undo/Redo Logic
 
 ### The Challenge
 
@@ -450,144 +310,225 @@ Result: Visually consistent across all clients
 
 ## Performance Decisions
 
-### 1. Point Batching
+### When Strokes Overlap
 
-**Decision**: Send 5 points per batch OR every 16ms (60fps)
+When two people draw at the same time, one question comes up: which stroke appears "on top"? 
 
-**Why**:
-- Raw drawing = 1000 points per stroke
-- Without batching = 1000 POST requests ❌
-- With batching = 200 requests ✅
-- **80% reduction in network calls**
+The answer: **whichever one was completed second**.
 
-### 2. Separate Canvas Layers
+Here's why this works:
+- The server has a clock for everything
+- Each stroke gets a timestamp when it finishes
+- Strokes are drawn in timestamp order
+- The person who drew most recently appears on top
 
-**Decision**: Use two canvas elements - one for strokes, one for cursors
-
-**Why**:
-- Drawing 100+ cursors every frame = expensive
-- Cursor canvas is cleared/redrawn every frame (cheap)
-- Main canvas rendered only on stroke changes (expensive)
-- **40% FPS improvement** ✅
-
-### 3. Cursor Throttling
-
-**Decision**: Only send cursor update if moved >2px OR drawing state changed
-
-**Why**:
-- 60fps × 100 users = 6000 messages/sec ❌
-- Smart detection reduces to ~30fps = 3000 messages/sec ✅
-- **50% reduction in cursor updates**
-
-### 4. Shape Optimization
-
-**Decision**: Store only startPoint and endPoint for shapes
-
-**Why**:
-- Line from (0,0) to (100,100) = 2 points
-- Bitmap of line = 200+ points ❌
-- **95% data reduction** ✅
-
-### 5. Memory Limits
-
-**Decision**: Keep max 10,000 strokes per room, 500 operations
-
-**Why**:
-- Long sessions would consume unlimited memory ❌
-- Auto-cleanup prevents memory leaks ✅
-- Per-client memory stays <150MB ✅
-
-### 6. Input Validation
-
-**Decision**: Validate and clamp all inputs on server
-
-**Why**:
-- Malicious clients could send garbage data ❌
-- Validation prevents crashes ✅
-- Clamping ensures consistency
+It's like layers in Photoshop, except the layer order is determined by when you finished drawing, not by who drew it.
 
 ---
 
-## Project Structure
+## Making It Fast
+
+The app is designed to feel instant, even with 100+ people drawing at once. Here's how:
+
+### 💡 Smart Point Batching
+
+When you draw a line, your brush might generate 1000 individual points. Sending each one separately would be insane.
+
+**Instead**: We send them in groups of 5, or every 16 milliseconds (whichever comes first)
+
+This means:
+- ✅ Fewer requests to the server
+- ✅ Still feels smooth and instant
+- ✅ **80% fewer network requests**
+
+### 💡 Two-Layer Canvas
+
+Drawing cursors (where people are pointing) need to update very fast. The actual strokes don't change as often.
+
+**Solution**: Use two canvas elements
+- **Main canvas**: Shows the strokes (updates when strokes change)
+- **Cursor canvas**: Shows everyone's cursor (updates constantly, clears between frames)
+
+Result:
+- ✅ Cursor layer is super efficient
+- ✅ Stroke layer only redraws when needed
+- ✅ **40% faster** than redrawing everything
+
+### 💡 Smarter Cursor Updates
+
+We don't send your cursor position every single frame. Instead:
+
+**Only send an update if**:
+- You moved more than 2 pixels, OR
+- You started/stopped drawing
+
+Result:
+- ✅ Way fewer cursor messages
+- ✅ Still looks completely smooth
+- ✅ **50% less network traffic** for cursors
+
+### 💡 Storing Shapes Efficiently
+
+When you draw a line or rectangle, we don't store every pixel. We just store:
+- Start point (where you started)
+- End point (where you finished)
+- Style (color, width, etc)
+
+When rendering, we redraw the line using math, not stored pixels.
+
+Result:
+- ✅ Uses way less memory
+- ✅ Shapes can scale without losing quality
+- ✅ **95% smaller** than storing pixels
+
+### 💡 Memory Limits
+
+We don't store unlimited history. After 10,000 strokes or 500 undo/redo operations, the oldest stuff gets deleted.
+
+**Why**:
+- ✅ Prevents memory leaks on long sessions
+- ✅ Keeps the server running fast
+- ✅ Each client uses less than 150MB
+
+### 💡 Input Validation
+
+Every piece of data from your browser is checked and validated on the server:
+- Is the stroke ID valid?
+- Are the coordinates within bounds?
+- Is the user allowed to do this?
+
+**Why**:
+- ✅ Prevents crashes from bad data
+- ✅ Stops malicious attacks
+- ✅ Ensures consistency
+
+---
+
+## Project Layout
+
+Here's where everything lives in the codebase:
 
 ```
-collaborative-canvas/
-├── app/                          # Next.js app directory
-│   ├── api/ws/route.ts          # SSE + POST API endpoint
-│   ├── layout.tsx               # Root layout
-│   ├── page.tsx                 # Home page
-│   └── globals.css              # Global styles
-├── components/                   # React components
-│   ├── canvas/
-│   │   ├── collaborative-canvas-app.tsx  # Main orchestrator
-│   │   ├── drawing-canvas.tsx            # Canvas rendering + input
-│   │   ├── join-room-dialog.tsx          # Room joining UI
-│   │   ├── toolbar.tsx                   # Drawing tools UI
-│   │   ├── users-panel.tsx               # Users + metrics
-│   │   └── notifications.tsx             # Toast notifications
-│   ├── theme-provider.tsx              # Theme wrapper
-│   └── ui/                             # shadcn/ui components
-├── hooks/
-│   ├── use-collaborative-canvas.ts     # Main state management
-│   ├── use-mobile.ts                   # Mobile detection
-│   └── use-toast.ts                    # Toast notifications
-├── lib/
-│   ├── drawing-types.ts         # TypeScript interfaces
+your-drawing-app/
+│
+├── app/                          # The app's main files (Next.js)
+│   ├── api/ws/route.ts          # Where the server magic happens
+│   │                             # (receives draws, broadcasts to everyone)
+│   ├── layout.tsx               # The wrapper for every page
+│   ├── page.tsx                 # The home page
+│   └── globals.css              # Styling that applies everywhere
+│
+├── components/                   # React building blocks
+│   ├── canvas/                  # All the drawing app stuff
+│   │   ├── collaborative-canvas-app.tsx  # The main conductor
+│   │   │                                  # (coordinates everything)
+│   │   ├── drawing-canvas.tsx            # The actual canvas
+│   │   │                                  # (where you draw)
+│   │   ├── join-room-dialog.tsx          # "Enter room name" dialog
+│   │   ├── toolbar.tsx                   # The drawing tools
+│   │   ├── users-panel.tsx               # Shows who's connected
+│   │   └── notifications.tsx             # Toast pop-up messages
+│   ├── theme-provider.tsx              # Light/dark mode
+│   └── ui/                             # Generic UI components
+│                                        # (buttons, dialogs, etc)
+│
+├── hooks/                       # Reusable logic
+│   ├── use-collaborative-canvas.ts     # Core drawing logic
+│   │                                    # (manages state, talks to server)
+│   ├── use-mobile.ts                   # Detects if on mobile
+│   └── use-toast.ts                    # Shows notifications
+│
+├── lib/                         # Helper code
+│   ├── drawing-types.ts         # Type definitions for TypeScript
 │   └── utils.ts                 # Utility functions
-└── public/                       # Static assets
+│
+└── public/                      # Images, icons, static files
 ```
+
+### Key Files Explained
+
+**`app/api/ws/route.ts`** - The heart of the app
+- When you POST (send) a stroke → it goes here
+- When you GET (connect) → it opens a stream
+- This is where all the drawing logic lives
+
+**`components/canvas/collaborative-canvas-app.tsx`** - The conductor
+- Coordinates all the pieces
+- Handles joining rooms
+- Manages undo/redo
+- Shows notifications
+
+**`hooks/use-collaborative-canvas.ts`** - The state manager
+- Keeps track of what's on the canvas
+- Handles sending/receiving messages
+- Manages your undo/redo history
+
+**`components/canvas/drawing-canvas.tsx`** - The canvas itself
+- Renders your strokes
+- Detects your mouse/touch input
+- Shows other people's cursors
 
 ---
 
-## Production Deployment
+## Scaling Up
+
+Right now, the app stores everything in memory. It works great for a few hours, but what if you want to run it forever? Here's what would need to happen:
 
 ### Current Limitations
-- ❌ In-memory state only (lost on restart)
-- ❌ Single server only (no scaling)
-- ❌ No persistence to database
+- ❌ Everything disappears when the server restarts
+- ❌ Can only run on one server (no load balancing)
+- ❌ No real user accounts or security
 
-### Scaling to Production
+### Production Improvements
 
-1. **Add Redis Backend** for multi-server support
-2. **Add Database** for session persistence
-3. **Add Authentication** for security
-4. **Add Rate Limiting** for DOS protection
-5. **Add Monitoring** for observability
+**Step 1: Add Redis**
+- Keep drawings even if the app restarts
+- Support multiple servers running the same app
 
-### Deployment Checklist
-- [ ] Set up Redis cluster
-- [ ] Configure database (PostgreSQL/MongoDB)
-- [ ] Add authentication (Auth0/Firebase)
-- [ ] Enable SSL/TLS
-- [ ] Set up load balancer
-- [ ] Configure monitoring (Datadog/New Relic)
-- [ ] Add logging (Winston/Bunyan)
-- [ ] Set up backups
-- [ ] Load test with 1000+ users
+**Step 2: Add a Database**
+- Permanently save drawings
+- Let users load old drawings
+- Track user accounts
 
----
+**Step 3: Add Authentication**
+- User accounts (sign up / log in)
+- Only allow certain people in rooms
 
-## Summary
+**Step 4: Add Security**
+- Limit how fast people can draw (prevent spam)
+- Validate everything more strictly
+- Encrypt connections (HTTPS/SSL)
 
-### Architecture Highlights
+**Step 5: Add Monitoring**
+- Track how many people are using it
+- Get alerts if something breaks
+- Log everything for debugging
 
-✅ **Event-Driven**: All changes flow through server
-✅ **Real-Time**: SSE provides immediate updates
-✅ **Consistent**: Server is source of truth
-✅ **Scalable**: Optimized for 100+ concurrent users
-✅ **Robust**: Comprehensive input validation
-✅ **Responsive**: Client-side prediction + batching
-
-### Performance Guarantees
-
-- ✅ 60 FPS single user
-- ✅ 55-60 FPS with 10 users
-- ✅ 50-60 FPS with 50 users
-- ✅ 40-55 FPS with 100 users
-- ✅ <100ms latency on 10Mbps
-- ✅ <150MB memory per client
+### Pre-Launch Checklist
+- [ ] Set up Redis
+- [ ] Set up a database (PostgreSQL or MongoDB)
+- [ ] Add user accounts
+- [ ] Enable HTTPS
+- [ ] Set up a load balancer (so you can add more servers)
+- [ ] Add monitoring and logging
+- [ ] Automatic backups
+- [ ] Test with 1000+ users at once
 
 ---
 
-**Architecture Version**: 1.0  
+## In a Nutshell
+
+Here's the whole thing simplified:
+
+✅ **You draw** → Your browser shows it immediately (optimistic)
+✅ **Sends to server** → Server validates and broadcasts
+✅ **Everyone receives** → Their browsers show your drawing
+✅ **Stays in sync** → If someone refreshes, they get the current state
+✅ **Undo works for everyone** → If you undo, everyone sees it undone
+✅ **It's fast** → With optimizations, handles 100+ people
+✅ **It's reliable** → Server is the source of truth
+
+---
+
+**Version**: 1.0  
 **Last Updated**: February 1, 2026
