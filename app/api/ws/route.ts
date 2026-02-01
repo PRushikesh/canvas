@@ -22,10 +22,9 @@ const redis = createClient({
       const delay = Math.min(retries * 10, 100) // Faster reconnect
       return delay
     },
-    keepAlive: 30000, // Keep connection alive
+    keepAlive: true, // Keep connection alive
     noDelay: true, // TCP_NODELAY for low latency
   },
-  commandsQueueBehaviour: 'FLUSH', // Send commands immediately
 })
 
 redis.connect().catch((err) => console.error('Redis failed:', err))
