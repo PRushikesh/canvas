@@ -131,12 +131,12 @@ export function Toolbar({
                       type="button"
                       onClick={() => onSettingsChange({ ...settings, color })}
                       className={cn(
-                        'w-8 h-8 rounded-md border-2 transition-all hover:scale-110',
+                        'w-8 h-8 rounded-md border-2 transition-all hover:scale-110 color-swatch',
                         settings.color === color
                           ? 'border-primary ring-2 ring-primary ring-offset-2'
                           : 'border-border'
                       )}
-                      style={{ backgroundColor: color }}
+                      style={{ '--color': color } as React.CSSProperties}
                       aria-label={`Select color ${color}`}
                     />
                   </TooltipTrigger>
@@ -299,6 +299,8 @@ export function Toolbar({
             accept=".json"
             onChange={handleFileChange}
             className="hidden"
+            aria-label="Load session file"
+            title="Load session file"
           />
         </div>
       </div>

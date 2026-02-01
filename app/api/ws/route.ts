@@ -18,7 +18,7 @@ import {
 const redis = createClient({
   url: process.env.REDIS_URL || 'rediss://default:password@host:6379',
   socket: {
-    reconnectStrategy: (retries) => {
+    reconnectStrategy: (retries: number): number | false => {
       const delay = Math.min(retries * 10, 100) // Faster reconnect
       return delay
     },
@@ -308,12 +308,40 @@ export async function POST(request: NextRequest) {
         if (room.operations.length > 0) {
           const op = room.operations.pop()!
           room.redoStack.push(op)
+          
+          // Actually undo the operation: remove the stroke if it was added
+          if (op.type === 'stroke_add' && op.stroke) {
+            room.strokes = room.strokes.filter(s => s.id !== op.stroke!.id)
+          } else if (op.type === 'stroke_remove' && op.stroke) {
+            // Re-add the stroke if it was removed
+            room.strokes.push(op.stroke)
+          }
+          
           await saveRoom(roomId, room)
+          
+          // Broadcast undo to all clients with updated strokes
           await broadcastToRoom(roomId, {
             type: 'undo',
             roomId,
             userId,
-            payload: { operation: op, canUndo: room.operations.length > 0, canRedo: true },
+            payload: { 
+              operation: op, 
+              strokes: room.strokes,
+              canUndo: room.operations.length > 0, 
+              canRedo: true 
+            },
+            timestamp: Date.now(),
+          })
+          
+          // Send notification
+          await broadcastToRoom(roomId, {
+            type: 'notification',
+            roomId,
+            userId,
+            payload: {
+              message: `${user?.name || 'Someone'} undid ${op.userName}'s action`,
+              type: 'info',
+            },
             timestamp: Date.now(),
           })
         }
@@ -324,12 +352,40 @@ export async function POST(request: NextRequest) {
         if (room.redoStack.length > 0) {
           const op = room.redoStack.pop()!
           room.operations.push(op)
+          
+          // Actually redo the operation: restore the stroke if it was removed
+          if (op.type === 'stroke_add' && op.stroke) {
+            room.strokes.push(op.stroke)
+          } else if (op.type === 'stroke_remove' && op.stroke) {
+            // Remove the stroke again if it was added
+            room.strokes = room.strokes.filter(s => s.id !== op.stroke!.id)
+          }
+          
           await saveRoom(roomId, room)
+          
+          // Broadcast redo to all clients with updated strokes
           await broadcastToRoom(roomId, {
             type: 'redo',
             roomId,
             userId,
-            payload: { operation: op, canUndo: true, canRedo: room.redoStack.length > 0 },
+            payload: { 
+              operation: op, 
+              strokes: room.strokes,
+              canUndo: true, 
+              canRedo: room.redoStack.length > 0 
+            },
+            timestamp: Date.now(),
+          })
+          
+          // Send notification
+          await broadcastToRoom(roomId, {
+            type: 'notification',
+            roomId,
+            userId,
+            payload: {
+              message: `${user?.name || 'Someone'} redid ${op.userName}'s action`,
+              type: 'info',
+            },
             timestamp: Date.now(),
           })
         }
@@ -341,11 +397,25 @@ export async function POST(request: NextRequest) {
         room.operations = []
         room.redoStack = []
         await saveRoom(roomId, room)
+        
+        // Broadcast clear to all clients
         await broadcastToRoom(roomId, {
           type: 'clear',
           roomId,
           userId,
-          payload: {},
+          payload: { canUndo: false, canRedo: false },
+          timestamp: Date.now(),
+        })
+        
+        // Send notification
+        await broadcastToRoom(roomId, {
+          type: 'notification',
+          roomId,
+          userId,
+          payload: {
+            message: `${user?.name || 'Someone'} cleared the canvas`,
+            type: 'warning',
+          },
           timestamp: Date.now(),
         })
         break

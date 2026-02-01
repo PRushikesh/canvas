@@ -272,15 +272,15 @@ export function useCollaborativeCanvas({ roomId, userName }: UseCollaborativeCan
           const { strokes, canUndo, canRedo } = payload as { 
             operation: Operation
             undoneBy: string
-            strokes: Stroke[]
+            strokes?: Stroke[]
             canUndo: boolean
             canRedo: boolean
           }
-          newState.strokes = strokes
+          newState.strokes = strokes || prev.strokes
           newState.operations = prev.operations.slice(0, -1)
           newState.canUndo = canUndo
           newState.canRedo = canRedo
-          newState.metrics = { ...prev.metrics, strokesCount: strokes.length }
+          newState.metrics = { ...prev.metrics, strokesCount: (strokes || prev.strokes).length }
           break
         }
 
@@ -288,15 +288,15 @@ export function useCollaborativeCanvas({ roomId, userName }: UseCollaborativeCan
           const { operation, strokes, canUndo, canRedo } = payload as { 
             operation: Operation
             redoneBy: string
-            strokes: Stroke[]
+            strokes?: Stroke[]
             canUndo: boolean
             canRedo: boolean
           }
-          newState.strokes = strokes
+          newState.strokes = strokes || prev.strokes
           newState.operations = [...prev.operations, operation]
           newState.canUndo = canUndo
           newState.canRedo = canRedo
-          newState.metrics = { ...prev.metrics, strokesCount: strokes.length }
+          newState.metrics = { ...prev.metrics, strokesCount: (strokes || prev.strokes).length }
           break
         }
 

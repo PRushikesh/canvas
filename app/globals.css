@@ -123,3 +123,8 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Color swatch button for toolbar */
+.color-swatch {
+  background-color: var(--color);
+}
