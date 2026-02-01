@@ -204,7 +204,7 @@ export function CollaborativeCanvasApp() {
           <div className="flex items-center gap-2">
             {currentUser && (
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: currentUser.color }} />
+                <div className="w-3 h-3 rounded-full user-color-indicator" style={{ '--user-color': currentUser.color } as React.CSSProperties} />
                 <span className="text-sm font-medium">{currentUser.name}</span>
               </div>
             )}

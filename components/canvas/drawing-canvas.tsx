@@ -395,16 +395,16 @@ export function DrawingCanvas({
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full bg-white rounded-lg overflow-hidden shadow-inner"
-      style={{ touchAction: 'none' }}
+      className="relative w-full h-full bg-white rounded-lg overflow-hidden shadow-inner canvas-container"
+      style={{} as React.CSSProperties}
     >
       {/* Main drawing canvas */}
       <canvas
         ref={mainCanvasRef}
         width={dimensions.width}
         height={dimensions.height}
-        className="absolute inset-0"
-        style={{ cursor: getCursorStyle() }}
+        className="absolute inset-0 canvas-main"
+        style={{ '--cursor-style': getCursorStyle() } as React.CSSProperties}
         onMouseDown={handlePointerDown}
         onMouseMove={handlePointerMove}
         onMouseUp={handlePointerUp}

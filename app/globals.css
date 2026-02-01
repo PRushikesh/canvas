@@ -128,3 +128,18 @@
 .color-swatch {
   background-color: var(--color);
 }
+
+/* User color indicator in collaborative-canvas-app */
+.user-color-indicator {
+  background-color: var(--user-color);
+}
+
+/* Canvas container touch action */
+.canvas-container {
+  touch-action: none;
+}
+
+/* Canvas main element cursor */
+.canvas-main {
+  cursor: var(--cursor-style, crosshair);
+}
