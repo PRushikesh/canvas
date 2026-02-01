@@ -13,7 +13,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { 
+import {
   Paintbrush, 
   Eraser, 
   Undo2, 
@@ -24,7 +24,6 @@ import {
   Circle,
   Download,
   Save,
-  Upload,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useRef } from 'react'
@@ -37,7 +36,6 @@ interface ToolbarProps {
   onClear: () => void
   onDownload: () => void
   onSaveSession: () => void
-  onLoadSession: (file: File) => void
   canUndo: boolean
   canRedo: boolean
 }
@@ -58,20 +56,9 @@ export function Toolbar({
   onClear,
   onDownload,
   onSaveSession,
-  onLoadSession,
   canUndo,
   canRedo,
 }: ToolbarProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      onLoadSession(file)
-      e.target.value = '' // Reset input
-    }
-  }
-
   const isShapeTool = settings.tool === 'line' || settings.tool === 'rectangle' || settings.tool === 'circle'
 
   return (
@@ -276,32 +263,7 @@ export function Toolbar({
                 <p>Save Session</p>
               </TooltipContent>
             </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button 
-                  variant="outline" 
-                  size="icon" 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-10 h-10 bg-transparent"
-                >
-                  <Upload className="h-5 w-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Load Session</p>
-              </TooltipContent>
-            </Tooltip>
           </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json"
-            onChange={handleFileChange}
-            className="hidden"
-            aria-label="Load session file"
-            title="Load session file"
-          />
         </div>
       </div>
     </TooltipProvider>

@@ -10,23 +10,18 @@ const _geistMono = Geist_Mono({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: 'Collaborative Canvas - Real-time Drawing',
   description: 'A multi-user drawing application where multiple people can draw simultaneously on the same canvas with real-time synchronization.',
-  generator: 'v0.app',
   icons: {
     icon: [
       {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
+        url: '/favicon.png',
+        type: 'image/png',
+      }
     ],
-    apple: '/apple-icon.png',
+    apple: {
+      url: '/favicon.png',
+      type: 'image/png',
+    },
+    shortcut: '/favicon.png',
   },
 }
 
@@ -37,6 +32,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <link rel="icon" href="/favicon.png" type="image/png" sizes="any" />
+        <link rel="apple-touch-icon" href="/favicon.png" />
+        <meta name="theme-color" content="#ffffff" />
+      </head>
       <body className={`font-sans antialiased`}>
         {children}
         <Analytics />

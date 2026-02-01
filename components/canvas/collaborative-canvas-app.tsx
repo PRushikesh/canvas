@@ -95,20 +95,6 @@ export function CollaborativeCanvasApp() {
     }
   }, [downloadCanvas])
 
-  // Handle load session
-  const handleLoadSession = useCallback(
-    async (file: File) => {
-      try {
-        const text = await file.text()
-        const session: SavedSession = JSON.parse(text)
-        loadSession(session)
-      } catch {
-        console.error('[v0] Failed to load session')
-      }
-    },
-    [loadSession]
-  )
-
   // Keyboard shortcuts
   useEffect(() => {
     if (!joined) return
@@ -228,7 +214,6 @@ export function CollaborativeCanvasApp() {
             onClear={clearCanvas}
             onDownload={handleDownload}
             onSaveSession={saveSession}
-            onLoadSession={handleLoadSession}
             canUndo={canUndo}
             canRedo={canRedo}
           />
